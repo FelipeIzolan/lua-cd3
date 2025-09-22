@@ -1,29 +1,39 @@
-return function(src)
-  local keyword = {
-    ["and"] = true,
-    ["break"] = true,
-    ["do"] = true,
-    ["else"] = true,
-    ["elseif"] = true,
-    ["end"] = true,
-    ["false"] = true,
-    ["for"] = true,
-    ["function"] = true,
-    ["goto"] = true,
-    ["if"] = true,
-    ["in"] = true,
-    ["local"] = true,
-    ["nil"] = true,
-    ["not"] = true,
-    ["or"] = true,
-    ["repeat"] = true,
-    ["return"] = true,
-    ["then"] = true,
-    ["true"] = true,
-    ["until"] = true,
-    ["while"] = true
-  }
+local keyword = {
+  ["and"] = true,
+  ["break"] = true,
+  ["do"] = true,
+  ["else"] = true,
+  ["elseif"] = true,
+  ["end"] = true,
+  ["false"] = true,
+  ["for"] = true,
+  ["function"] = true,
+  ["goto"] = true,
+  ["if"] = true,
+  ["in"] = true,
+  ["local"] = true,
+  ["nil"] = true,
+  ["not"] = true,
+  ["or"] = true,
+  ["repeat"] = true,
+  ["return"] = true,
+  ["then"] = true,
+  ["true"] = true,
+  ["until"] = true,
+  ["while"] = true
+}
 
+local err = {
+  "Unfinished long string; expected: %s",
+  "Unfinished string; expected: %s",
+  "Invalid escape sequence; %s",
+}
+
+local function throw(index, payload)
+  error(string.format(err[index], payload))
+end
+
+return function(src)
   local pos = 1
   local tokens = {}
 
@@ -38,28 +48,37 @@ return function(src)
     pos = e
   end
 
-  -- type = 1 - Unfinished long string
-  -- type = 2 - Unfinished string
-  -- type = 3 - Unexpected Token
-  local function throw(type, expected)
-    local m = { 
-      "Unfinished long string; expected %s",
-      "Unfinished string; expected %s"
-    }
-    error(string.format(m[type], expected))
-  end
-
   local function read_string(del)
-    local i = pos
+    local i = pos + 1
     ::continue::
     local s, e, m = string.find(src, '([\n\r\\\"\'])', i)
     if s then
+      i = s + 1
       if m == '\n' or m == '\r' then
         throw(2, del)
       end
-      if m == '\\' then
+      -- possible end (' or ")
+      if m == del then
+        return string.sub(src, pos, i)
       end
-      i = s
+      -- escape sequence (\b, \255, ...)
+      -- https://en.wikipedia.org/wiki/Escape_sequences_in_C
+      if m == '\\' then
+        local s, e, m = string.find(src, '^[abfnrtv\\\'\"\n\r]', i)
+        if s then
+          i = s
+          goto continue
+        end
+        local s, e, m = string.find(src, '^(%d%d?%d?)', i)
+        if s then
+          if tonumber(m) > 255 then
+            throw(3, '\\' .. m)
+          end
+          i = e
+          goto continue
+        end
+        throw(3, '\\' .. string.sub(src, i, i))
+      end
       goto continue
     end
     throw(2, del)
@@ -67,11 +86,11 @@ return function(src)
 
   local function read_long_string(sep)
     sep = ']' .. sep .. ']'
-    local s, e, m = string.find(src, sep, pos)
+    local s, e = string.find(src, sep, pos)
     if s then
       return string.sub(src, pos, e)
     else
-      throw(1, sep)
+      throw(2, sep)
     end
   end
 
@@ -136,7 +155,7 @@ return function(src)
     end
     -- string
     if s == '\"' or s == '\'' then
-      push('TK_STRING', read_string());
+      push('TK_STRING', read_string(s));
       goto continue
     end
   end
