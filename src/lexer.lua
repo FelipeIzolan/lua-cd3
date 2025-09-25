@@ -23,13 +23,12 @@ local keyword = {
   ["while"] = true
 }
 
-local err = {
-  "Unfinished long string; expected: %s",
-  "Unfinished string; expected: %s",
-  "Invalid escape sequence; %s",
-}
-
 local function throw(index, payload)
+  local err = {
+    "Unfinished long string; expected: %s",
+    "Unfinished string; expected: %s",
+    "Invalid escape sequence; '%s'",
+  }
   error(string.format(err[index], payload))
 end
 
@@ -43,7 +42,7 @@ return function(src)
     tokens[#tokens + 1] = {
       type = type,
       data = data,
-      range = { pos, (l == 1 and e - 1 or e) }
+      range = { pos, e - 1 }
     }
     pos = e
   end
@@ -53,17 +52,19 @@ return function(src)
     ::continue::
     local s, e, m = string.find(src, '([\n\r\\\"\'])', i)
     if s then
-      i = s + 1
+      i = s
       if m == '\n' or m == '\r' then
         throw(2, del)
       end
       -- possible end (' or ")
       if m == del then
+        print('here:', string.sub(src, i, i))
         return string.sub(src, pos, i)
       end
       -- escape sequence (\b, \255, ...)
       -- https://en.wikipedia.org/wiki/Escape_sequences_in_C
       if m == '\\' then
+        i = i + 1
         local s, e, m = string.find(src, '^[abfnrtv\\\'\"\n\r]', i)
         if s then
           i = s
@@ -94,8 +95,8 @@ return function(src)
     end
   end
 
-  -- CheatSheet - Lua Pattern
-  -- https://cheatography.com/ambigious/cheat-sheets/lua-string-patterns/
+  -- Lua Pattern Matching
+  -- https://gist.github.com/spr2-dev/46ca9f4a6f933fa266bccd87fd15d09a
   -- https://github.com/lua/lua/blob/3fb7a77731e6140674a6b13b73979256bfb95ce3/lstrlib.c#L420
 
   ::continue::
@@ -104,32 +105,6 @@ return function(src)
   local s, e, m = string.find(src, "^(%s*)", pos)
   if m and m ~= '' then
     push('TK_SPACE', m)
-    goto continue
-  end
-  -- identifier & keyword
-  local s, e, m = string.find(src, "^([_%a][_%w]*)", pos)
-  if s then
-    push(keyword[m] and "TK_KEYWORD" or "TK_IDENTIFIER", m)
-    goto continue
-  end
-  -- numeral (int, float, exponential notation & hex)
-  local s, e, m = string.find(src, "^(%.?)%d", pos)
-  if s then
-    local i = pos
-    if m ~= '' then i = i + 1 end
-    local s, e, m = string.find(src, "^%d*" .. (m ~= '.' and '%.?%d*' or '') .. "([eE]?)", i)
-    i = e
-    -- exponential notation
-    if m ~= '' then
-      local s, e, m = string.find(src, "^[%+%-]%d+", i)
-      i = e
-    end
-    -- hex
-    local s, e, m = string.find(src, "^0x%x+", i)
-    if s then
-      i = e
-    end
-    push('TK_NUMBER', string.sub(src, pos, i))
     goto continue
   end
   -- punctuation
@@ -158,7 +133,51 @@ return function(src)
       push('TK_STRING', read_string(s));
       goto continue
     end
+    -- dots (.|..|..)
+    if s == '.' then
+      local s = string.match(src, "^(%.%.?%.?)", pos)
+      push('TK_OP', s)
+      goto continue
+    end
+    -- ==, ~=, >=, <=
+    if e == '=' and (s == '=' or s == '~' or s == '>' or s == '<') then
+      push('TK_OP', s .. e)
+      goto continue
+    end
+    -- floor division (//)
+    if s == '/' and e == '/' then
+      push('TK_OP', s .. e)
+      goto continue
+    end
+    -- etc...
+    push('TK_OP', s)
+    goto continue
   end
-
+  -- numeral (int, float, exponential notation & hex)
+  local s, e, m = string.find(src, "^(%.?)%d", pos)
+  if s then
+    local i = pos
+    if m ~= '' then i = i + 1 end
+    local s, e, m = string.find(src, "^%d+" .. (m ~= '.' and '%.?%d*' or '') .. "([eE]?)", i)
+    i = e
+    -- exponential notation
+    if m ~= '' then
+      local s, e, m = string.find(src, "^[%+%-]%d+", i)
+      i = e
+    end
+    -- hex
+    local s, e, m = string.find(src, "^0x%x+", i)
+    if s then
+      i = e
+    end
+    push('TK_NUMBER', string.sub(src, pos, i))
+    goto continue
+  end
+  -- identifier & keyword
+  local s, e, m = string.find(src, "^([_%a][_%w]*)", pos)
+  if s then
+    push(keyword[m] and "TK_KEYWORD" or "TK_IDENTIFIER", m)
+    goto continue
+  end
   return tokens
 end
