@@ -50,15 +50,14 @@ return function(src)
   local function read_string(del)
     local i = pos + 1
     ::continue::
-    local s, e, m = string.find(src, '([\n\r\\\"\'])', i)
+    local s, e, m = string.find(src, '([\n\r\"\'\\])', i)
     if s then
       i = s
       if m == '\n' or m == '\r' then
-        throw(2, del)
+        throw(2, '\\n or \\r | ' .. del)
       end
       -- possible end (' or ")
       if m == del then
-        print('here:', string.sub(src, i, i))
         return string.sub(src, pos, i)
       end
       -- escape sequence (\b, \255, ...)
@@ -107,6 +106,26 @@ return function(src)
     push('TK_SPACE', m)
     goto continue
   end
+  -- numeral (int, float, exponential notation & hex)
+  local s, e, m = string.find(src, "^(%.?)%d", pos)
+  if s then
+    local i = pos
+    if m ~= '' then i = i + 1 end
+    local s, e, m = string.find(src, "^%d+" .. (m ~= '.' and "%.?%d*([eE]?)" or "([eE]?)"), i)
+    i = e
+    -- exponential notation
+    if m ~= '' then
+      local s, e, m = string.find(src, "^[%+%-]%d+", i)
+      i = e
+    end
+    -- hex
+    local s, e, m = string.find(src, "^0x%x+", i)
+    if s then
+      i = e
+    end
+    push('TK_NUMBER', string.sub(src, pos, i))
+    goto continue
+  end
   -- punctuation
   -- https://en.cppreference.com/w/c/string/byte/ispunct
   local s, e = string.match(src, "^(%p)(%p?)", pos)
@@ -151,26 +170,6 @@ return function(src)
     end
     -- etc...
     push('TK_OP', s)
-    goto continue
-  end
-  -- numeral (int, float, exponential notation & hex)
-  local s, e, m = string.find(src, "^(%.?)%d", pos)
-  if s then
-    local i = pos
-    if m ~= '' then i = i + 1 end
-    local s, e, m = string.find(src, "^%d+" .. (m ~= '.' and '%.?%d*' or '') .. "([eE]?)", i)
-    i = e
-    -- exponential notation
-    if m ~= '' then
-      local s, e, m = string.find(src, "^[%+%-]%d+", i)
-      i = e
-    end
-    -- hex
-    local s, e, m = string.find(src, "^0x%x+", i)
-    if s then
-      i = e
-    end
-    push('TK_NUMBER', string.sub(src, pos, i))
     goto continue
   end
   -- identifier & keyword
