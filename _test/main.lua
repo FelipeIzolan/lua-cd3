@@ -3,7 +3,8 @@ lexer = require 'src.lexer'
 
 TestLexer = {
   TestNumber = require '_test.lexer.number',
-  TestString = require '_test.lexer.string'
+  TestString = require '_test.lexer.string',
+  TestKeyword = require '_test.lexer.keyword'
 }
 TestParser = {}
 TestMinifier = {}
